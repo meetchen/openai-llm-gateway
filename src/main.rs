@@ -1,9 +1,16 @@
 mod routes;
 
-use crate::routes::healthz::healthz;
 use anyhow::Context;
-use axum::{Router, routing::get};
+use reqwest::Client;
 use tracing::info;
+
+use crate::routes::router;
+
+#[derive(Clone)]
+pub struct AppState {
+    pub client: Client,
+    pub ollama_base: String,
+}
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -11,9 +18,16 @@ async fn main() -> anyhow::Result<()> {
 
     info!("starting server...");
 
-    let app = Router::new().route("/healthz", get(healthz));
+    let state = AppState {
+        client: Client::new(),
+        ollama_base: std::env::var("OLLAMA_BASE")
+            .unwrap_or_else(|_| "http://localhost:11434".into()),
+    };
+
+    let app = router().with_state(state);
 
     let addr = "0.0.0.0:8080";
+
     let listener = tokio::net::TcpListener::bind(addr)
         .await
         .with_context(|| format!("failed to bind to address: {}", addr))?;
