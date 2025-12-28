@@ -35,6 +35,7 @@ cargo run
 ```
 
 默认监听：`0.0.0.0:8080`
+默认上游：`OLLAMA_BASE=http://localhost:11434`
 
 验证（health check）：
 ```bash
@@ -49,6 +50,29 @@ OK
 ## 已实现接口
 
 - `GET /healthz`：健康检查，返回 `OK`（并记录一条 tracing 日志）
+- `POST /v1/chat/completions`：OpenAI-compatible 请求体，转发到上游（由 `OLLAMA_BASE` 指定）
+
+示例（非流式）：
+```bash
+curl -s http://127.0.0.1:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model":"llama3.2","messages":[{"role":"user","content":"hi"}],"stream":false,"max_tokens":32}'
+```
+
+## 配置
+
+- `OLLAMA_BASE`：上游推理服务地址，默认 `http://localhost:11434`
+
+## Smoke 脚本
+
+```bash
+bash scripts/test/smoke.sh
+```
+
+可选环境变量：
+- `BASE_URL`：网关地址（默认 `http://127.0.0.1:8080`）
+- `OLLAMA_BASE`：上游地址（默认 `http://127.0.0.1:11434`）
+- `MODEL`：请求模型名（默认 `qwen2.5-coder:7b`）
 
 ## 项目结构
 
@@ -58,25 +82,55 @@ src/
   routes/
     mod.rs           # routes 模块入口
     healthz.rs       # /healthz handler
+    v1/
+      mod.rs         # /v1 路由聚合
+      chat/
+        mod.rs       # /v1/chat 路由聚合
+        completions.rs
+scripts/
+  bench/
+    no_stream_bench.sh  # 非流式压测
+    stream_bench.sh     # 流式压测
+  test/
+    smoke.sh            # 冒烟测试脚本
 ```
 
 
 ## Roadmap
 
-- [ ] `POST /v1/chat/completions`：返回 mock JSON（先跑通协议形态）
-- [ ] SSE streaming：支持 token 流式返回
+- [x] `POST /v1/chat/completions`：转发到上游（最小可用）
+- [x] SSE streaming：支持 token 流式返回
 - [ ] Queue + Backpressure：排队/拒绝策略（429/503）
 - [ ] Concurrency Control：并发上限（Semaphore）
 - [ ] Backend Adapter：接入 vLLM/TGI（HTTP 或 gRPC）
 - [ ] Observability：metrics + trace（Prometheus-compatible / OpenTelemetry-compatible）
 - [ ] Scheduler：continuous batching（进阶）
 
+## Benchmarks
+
+环境与配置：
+- 环境：4070 TiS / i5-14600KF / 32GB / WSL
+- 模型：`qwen2.5-coder:7b`
+- Prompt：`"hi"`
+- `max_tokens`：`32`
+- Endpoint：`POST /v1/chat/completions`（non-stream）
+
+结果（`oha`）：
+
+| concurrency | rps  | avg  | p95  |
+| --- | --- | --- | --- |
+| 1 | 5.04 | 198ms | 334ms |
+| 2 | 6.40 | 312ms | 560ms |
+| 4 | 6.75 | 589ms | 838ms |
+| 8 | 6.00 | 1.32s | 1.76s |
+
+压测脚本：
+```bash
+bash scripts/bench/no_stream_bench.sh
+```
+
 ## 开发约定（Conventions）
 
 - 启动阶段错误使用 `anyhow` + `Context/with_context` 提供可诊断错误信息
 - 业务请求链路避免 `unwrap()`，后续统一映射为 HTTP status（4xx/5xx）
 - 使用 `cargo fmt` 保持统一格式
-
-
-
-

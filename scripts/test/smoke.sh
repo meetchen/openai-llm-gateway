@@ -51,5 +51,14 @@ HTTP_CODE=$(curl -sS -o /tmp/err.json -w "%{http_code}" \
 echo "[smoke] bad model http_code=$HTTP_CODE"
 cat /tmp/err.json | head -c 200; echo
 
+echo "[smoke] POST /v1/chat/completions (stream=true)"
+OUT="$(timeout 3 curl -sS -N "$BASE_URL/v1/chat/completions" \
+  -H "Content-Type: application/json" \
+  -d "{\"model\":\"$MODEL\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"stream\":true}" \
+  | head -n 2 || true
+)"
+echo "$OUT"
+echo "$OUT" | grep -q "^data:" || fail "stream output missing 'data:'"
+
 
 echo "[smoke] PASS"
