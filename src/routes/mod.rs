@@ -1,7 +1,7 @@
 pub mod healthz;
 pub mod v1;
 
-use crate::AppState;
+use crate::appstate::AppState;
 use axum::Router;
 
 pub fn router() -> Router<AppState> {

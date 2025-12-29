@@ -1,28 +1,33 @@
+mod appstate;
+mod inference;
 mod routes;
+mod types;
+
+use crate::appstate::AppState;
+use crate::inference::worker::InferenceWorker;
+use crate::routes::router;
 
 use anyhow::Context;
 use reqwest::Client;
 use tracing::info;
-
-use crate::routes::router;
-
-#[derive(Clone)]
-pub struct AppState {
-    pub client: Client,
-    pub ollama_base: String,
-}
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
 
     info!("starting server...");
 
-    let state = AppState {
-        client: Client::new(),
-        ollama_base: std::env::var("OLLAMA_BASE")
-            .unwrap_or_else(|_| "http://localhost:11434".into()),
-    };
+    let (tx, rx) = tokio::sync::mpsc::channel(100);
+
+    tokio::spawn(async move {
+        let mut worker = InferenceWorker::new(
+            rx,
+            Client::new(),
+            std::env::var("OLLAMA_BASE").unwrap_or_else(|_| "http://localhost:11434".into()),
+        );
+        worker.run().await;
+    });
+
+    let state = AppState { worker_tx: tx };
 
     let app = router().with_state(state);
 

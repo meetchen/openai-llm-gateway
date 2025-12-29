@@ -2,7 +2,7 @@ pub mod completions;
 
 use axum::{Router, routing::post};
 
-use crate::AppState;
+use crate::appstate::AppState;
 
 pub fn router() -> Router<AppState> {
     Router::new()

@@ -4,6 +4,11 @@
 
 当前阶段目标：先完成最小可运行闭环（HTTP server + health check + 结构化日志 + 错误上下文），再逐步叠加网关能力。
 
+## 实现概览
+
+- 请求处理与上游转发由 `InferenceWorker` 负责（统一处理流式/非流式）
+- HTTP 路由通过 channel 将请求发送给 worker，等待结果后返回
+
 ## 目标与范围（Scope）
 
 网关关注点（计划逐步实现）：
@@ -78,6 +83,9 @@ bash scripts/test/smoke.sh
 
 ```text
 src/
+  appstate.rs        # AppState（worker channel）
+  inference/
+    worker.rs        # 推理 worker：转发上游 + 处理 SSE/非流式
   main.rs            # 程序入口：初始化日志、启动 HTTP server、绑定端口
   routes/
     mod.rs           # routes 模块入口
@@ -87,6 +95,7 @@ src/
       chat/
         mod.rs       # /v1/chat 路由聚合
         completions.rs
+  types.rs           # 请求/错误类型
 scripts/
   bench/
     no_stream_bench.sh  # 非流式压测
@@ -115,18 +124,34 @@ scripts/
 - `max_tokens`：`32`
 - Endpoint：`POST /v1/chat/completions`（non-stream）
 
-结果（`oha`）：
+结果（non-stream，`oha`）：
 
-| concurrency | rps  | avg  | p95  |
-| --- | --- | --- | --- |
-| 1 | 5.04 | 198ms | 334ms |
-| 2 | 6.40 | 312ms | 560ms |
-| 4 | 6.75 | 589ms | 838ms |
-| 8 | 6.00 | 1.32s | 1.76s |
+```text
+Workers  | RPS          | Avg(ms)      | P95(ms)      | P99(ms)      | Status
+-------- | ------------ | ------------ | ------------ | ------------ | ---------------
+1        | 4.43         | 225.48       | 360.98       | 404.06       | ✅ OK
+4        | 5.33         | 717.00       | 970.30       | 1180.70      | ✅ OK
+8        | 4.75         | 1544.70      | 1964.30      | 2057.20      | ✅ OK
+16       | 4.97         | 2677.40      | 3398.80      | 3544.50      | ✅ OK
+```
+
+结果（stream，TTFT）：
+
+```text
+Workers  | Total Reqs | Avg TTFT     | P50 TTFT     | P99 TTFT     | Stability
+-------- | ---------- | ------------ | ------------ | ------------ | ---------------
+1        | 3          | 124.00       | 78           | 218          | ✅ OK
+2        | 6          | 102.00       | 103          | 133          | ✅ OK
+4        | 12         | 211.25       | 234          | 268          | ✅ OK
+8        | 24         | 432.29       | 477          | 550          | ✅ OK
+16       | 48         | 361.00       | 642          | 853          | ✅ OK
+32       | 96         | 1515.02      | 1780         | 1841         | ⚠️ High Latency
+```
 
 压测脚本：
 ```bash
 bash scripts/bench/no_stream_bench.sh
+bash scripts/bench/stream_bench.sh
 ```
 
 ## 开发约定（Conventions）

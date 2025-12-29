@@ -47,27 +47,27 @@ for C in $C_LIST; do
       # 支持 us (微秒), ms (毫秒), secs (秒) 统一转为 ms
         extract_time() {
             key="$1"
-            grep -m1 "$key" "$OUT" | awk '
-                {
-                # 从整行匹配: 数字 + (可选空格) + 单位(us/ms/secs)
-                if (match($0, /([0-9.]+)[[:space:]]*(us|ms|secs)/, a)) {
-                    val = a[1] + 0
-                    unit = a[2]
-                    if (unit == "us")   printf "%.2f", val / 1000
-                    else if (unit == "ms")   printf "%.2f", val
-                    else if (unit == "secs") printf "%.2f", val * 1000
-                    else printf "0"
-                } else {
-                    # 没匹配到就输出 0，避免空字符串
+            line=$(grep -m1 -E "$key" "$OUT" || true)
+            if [[ $line =~ ([0-9.]+)[[:space:]]*(us|ms|sec|secs|s) ]]; then
+                val="${BASH_REMATCH[1]}"
+                unit="${BASH_REMATCH[2]}"
+                if [[ "$unit" == "us" ]]; then
+                    printf "%.2f" "$(awk "BEGIN {print $val/1000}")"
+                elif [[ "$unit" == "ms" ]]; then
+                    printf "%.2f" "$val"
+                elif [[ "$unit" == "sec" || "$unit" == "secs" || "$unit" == "s" ]]; then
+                    printf "%.2f" "$(awk "BEGIN {print $val*1000}")"
+                else
                     printf "0"
-                }
-                }
-            '
+                fi
+            else
+                printf "0"
+            fi
         }
 
       avg_ms=$(extract_time "Average:")
-      p95_ms=$(extract_time "95% in")
-      p99_ms=$(extract_time "99% in")
+      p95_ms=$(extract_time "95([.]0+)?% in")
+      p99_ms=$(extract_time "99([.]0+)?% in")
 
       # 状态检查
       if grep -q "\[200\]" "$OUT"; then 
